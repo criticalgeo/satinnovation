@@ -1,0 +1,203 @@
+---
+title: "UCS Satellite Database — Fuzzy Matching"
+author: Kaijing Janice Chen
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r loadlibraries, results="hide"}
+library(tidyverse) # data wrangling & viz
+library(magrittr) # data wrangling
+library(gtools)
+library(tidystringdist) # calculating string distance
+```
+
+```{r loaddata}
+# load data
+ucs_sats <- read.csv("../data/raw/01_ucssatellites_0401.csv") %>% # load data 
+  select(opown = "Operator.Owner", contractor = "Contractor", opown_country = "Country.of.Operator.Owner", contractor_country = "Country.of.Contractor") # select operator/owner & contractor column
+
+# writing function to print number of unique names in each column to check progress of fuzzy matching
+numuniq <- function(x) {
+  c(length(unique(ucs_sats$opown)), length(unique(ucs_sats$contractor)))
+  
+}
+
+# checking current number of unique entries 
+numuniq()
+```
+
+First, I will remove all punctuation, with the exception of parentheses and slashes. I will preserve the slashes in order to maintain partnerships between organizations in the data (e.g. NASA/Johns Hopkins). I will preserve the parentheses in order to remove abbreviations of organizations later (e.g. (NASA)). I will also trim all white space and multiple spaces. 
+
+```{r tidyone}
+# removes all punctuation with the exception of forward slashes and parentheses
+ucs_sats[] <- lapply(ucs_sats, function(x) {
+  gsub("([\\(\\)//])|[[:punct:]]", "\\1", x) 
+  })
+numuniq()
+
+# remove all content in parentheses, including parentheses
+ucs_sats[] <- lapply(ucs_sats, function(x) gsub ("\\s*\\([^\\)]+\\)", "", x))
+numuniq()
+
+# trim white space
+ucs_sats[, 1:ncol(ucs_sats)] <- lapply(ucs_sats[, 1:ncol(ucs_sats)], trimws)
+ucs_sats[, 1:ncol(ucs_sats)] <- lapply(ucs_sats[, 1:ncol(ucs_sats)], function(x) gsub("\\s+", " ", x))
+numuniq()
+
+# removing all instances of "/ ", replacing with "/"
+ucs_sats[] <- lapply(ucs_sats, function(x) gsub ("/ ", "/", x))
+numuniq()
+
+# removing all instances of "Inc, Incorporated, Ltd, Limited"
+list <- c(" Inc", " Incorporated", " Ltd", " Limited")
+for (i in list) {
+  ucs_sats[] <- lapply(ucs_sats, function(x) gsub (i, "", x))
+}
+
+numuniq()
+```
+
+Now, I will create a data frame that lists all possible combinations of names and then calculate string distance.
+
+```{r stringdist}
+cont_comb <- tidy_comb_all(unique(ucs_sats$contractor))
+op_comb <- tidy_comb_all(unique(ucs_sats$opown))
+
+cont_dist <- tidy_stringdist(cont_comb) %>%
+  filter(osa != 0) %>%
+  inner_join(ucs_sats[c(2, 4)], by = c("V1" = "contractor")) %>% # joining country columns for additional criterion for evaluation
+  inner_join(ucs_sats[c(2, 4)], by = c("V2" = "contractor"))
+
+names(cont_dist)[13:14] <- c("V1country", "V2country") # renaming columns
+
+op_dist <- tidy_stringdist(op_comb) %>%
+  filter(osa != 0) %>%
+  left_join(ucs_sats[c(1, 3)], by = c("V1" = "opown")) %>%
+  left_join(ucs_sats[c(1, 3)], by = c("V2" = "opown"))
+
+names(op_dist)[13:14] <- c("V1country", "V2country")
+
+dist <- rbind(cont_dist, op_dist) # combining the data frames
+dist <- dist[!duplicated(dist[, 1:2]), ] # removing duplicates
+
+# decide on cosine similarity threshold and then filter all rows according to this criteria 
+# if country is the same, cosine is less than threshold, and osa is less than 20, then replace V1 with V2 
+# if country is the same, cosine is less than threshold and osa is more than 20, trigger ask yes/no
+
+cosine010 <- dist %>%
+  filter(cosine < 0.10)
+ 
+for (i in 1:nrow(cosine010)) {
+  if (cosine010[i, "V1country"] == cosine010[i, "V2country"]) {
+    if (cosine010[i, "osa"] < 20) {
+      ucs_sats[grep(cosine010$V2[i], ucs_sats$opown), 1] <- cosine010$V1[i]
+      ucs_sats[grep(cosine010$V2[i], ucs_sats$contractor), 2] <- cosine010$V1[i]
+      
+      
+      
+    } else {
+      print(paste(cosine010$V1[i], "," , cosine010$V2[i]))
+      t <- askYesNo("Swap values?", default = FALSE)
+        if (t == TRUE) {
+          ucs_sats[grep(cosine010$V2[i], ucs_sats$opown), 1] <- cosine010$V1[i]
+          ucs_sats[grep(cosine010$V2[i], ucs_sats$contractor), 2] <- cosine010$V1[i]
+        } else {
+          u <- readline("Replace with something else? Write string here:")
+          ucs_sats[grep(cosine010$V2[i], ucs_sats$opown), 1] <- u
+          ucs_sats[grep(cosine010$V2[i], ucs_sats$contractor), 2] <- u
+          ucs_sats[grep(cosine010$V1[i], ucs_sats$opown), 1] <- u
+          ucs_sats[grep(cosine010$V1[i], ucs_sats$contractor), 2] <- u
+          
+        }
+    }
+  }
+    cosine010 <- cosine010[!grep(cosine010$V2[i]), ] # removing these rows to stop re-matching later on
+    cosine010 <- cosine010[!grep(cosine010$V1[i]), ]
+}
+
+
+
+# decide on osa threshold (something like 5) and soundex = 0
+
+# comb <- tidy_comb_all(unique(c(ucs_sats$opown, ucs_sats$contractor)))
+# dist <- tidy_stringdist(comb) %>%
+#   filter(osa != 0)
+
+# # creating separate data frames of single and multi-actors
+# multidist <- dist %>%
+#   filter(grepl("/", V1), grepl("/", V2))
+# 
+# 
+# singledist <- dist %>%
+#   filter(!grepl("/", V1), !grepl("/", V2))
+
+```
+
+Examining the resulting data frame shows viable matches exist mostly when OSA value is less than 5, the soundex value is 0 (i.e. the strings sound familiar), cosine similarity < 0.25 and JW distance < 0.15.
+```{r fuzzy1}
+# filtering out these rows (excluding rows with slashes — will examine these separately)
+# sound_osa <- dist %>%
+#   filter(soundex == 0 & osa < 5 & cosine < 0.25, jw < 0.15) %>%
+#   filter(!grepl("/", V1), !grepl("/", V2)) 
+```
+
+Manual examination reveals names starting with "University of" do not present an issue of duplication in this dataset.
+
+``` {r fuzzy2}
+# removing these rows
+# sound_osa %<>% filter(!grepl("University ", V1), !grepl("University", V2))
+# 
+# # removing duplicate pairs, first sorting the rows in the first two columns alphabetically, then filtering out duplicates
+# for (i in 1:nrow(sound_osa)) {
+#     sound_osa[i, 1:2] <- sort(sound_osa[i, 1:2])
+# }
+# 
+# sound_osa <- sound_osa[!duplicated(sound_osa[, 1:2]), ]
+```
+
+For the most part, names in the first column are valid replacements for names in the second column. However, there are a few instances where names in both columns are incorrect or it is the name in the second column that is correct. Manually correcting these. 
+
+```{r fuzzy3}
+# removing "Space Technologies Research Institute" and "Space Technology Research Institute" — these are different orgs
+# sound_osa %<>% slice(-c(11))
+# 
+# # The instances of "Northrop Grumman Innovation Systems" is incorrect in both V1 and V2. Create an additional row that will replace the incorrect instance in V1, and then replace V1 with correct spelling. 
+# temp <- data.frame(c("Northrop Grumman Innovation Systems", sound_osa[18, 1], sound_osa[18, 3:12]))
+# names(temp) <- names(sound_osa)
+# sound_osa %<>% rbind(temp)
+# sound_osa[18, 1] <- "Northrop Grumman Innovation Systems"
+# 
+# # do the same for OHB System AG
+# temp <- data.frame(c("OHB System AG", sound_osa[20, 1], sound_osa[20, 3:12]))
+# names(temp) <- names(sound_osa)
+# sound_osa %<>% rbind(temp)
+# sound_osa[20, 1] <- "OHB System AG"
+# 
+# # swap values in these rows: 6, 9, 10 
+# for(x in c(6, 9, 10)) {
+#   t <- sound_osa[x, 2]
+#   sound_osa[x, 2] <- sound_osa[x, 1]
+#   sound_osa[x, 1] <- t
+# }
+# 
+# # left column are now all good replacements, so will replace all instances of names in right column with those in the left (also replacing all instances in the )
+# for (i in 1:nrow(sound_osa)) {
+#   ucs_sats[grep(sound_osa$V2[i], ucs_sats$opown), 1] <- sound_osa$V1[i]
+#   ucs_sats[grep(sound_osa$V2[i], ucs_sats$contractor), 2] <- sound_osa$V1[i]
+# }
+# 
+# numuniq()
+```
+
+Now manually examining unique lists.
+```{r check}
+# allnames <- c(unique(c(ucs_sats$contractor, ucs_sats$opown))) %>%
+#   sort() %>%
+#   data.frame()
+# 
+# singleactors <- allnames %>%
+#   filter(!grepl("/", .))
+```
