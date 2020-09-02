@@ -87,40 +87,59 @@ dist <- dist[!duplicated(dist[, 1:2]), ] # removing duplicates
 # if country is the same, cosine is less than threshold, and osa is less than 20, then replace V1 with V2 
 # if country is the same, cosine is less than threshold and osa is more than 20, trigger ask yes/no
 
-cosine010 <- dist %>%
-  filter(cosine < 0.10)
- 
-for (i in 1:nrow(cosine010)) {
-  if (cosine010[i, "V1country"] == cosine010[i, "V2country"]) {
-    if (cosine010[i, "osa"] < 20) {
-      ucs_sats[grep(cosine010$V2[i], ucs_sats$opown), 1] <- cosine010$V1[i]
-      ucs_sats[grep(cosine010$V2[i], ucs_sats$contractor), 2] <- cosine010$V1[i]
+cosine010_us <- dist %>%
+  filter(cosine < 0.10, !grepl("/", V1), !grepl("/", V2)) # removing slashes to retrieve single actors (!!RECALCULATE STRING DIST AFTER NAME REPLACEMENTS FOR SLASHES!! because string replacements in the single actor process may have fixed differences in multiactors)
+
+# sort alphabetically 
+for (i in 1:nrow(cosine010_us)) {
+  cosine010_us[i, 1:2] <-  sort(cosine010_us[i, 1:2])
+}
+  
+cosine010_us <- cosine010_us[!duplicated(cosine010_us), ]
+
+for (i in 1:nrow(cosine010_us)) {
+  
+  if (cosine010_us[i, "V1country"] == cosine010_us[i, "V2country"]) {
+    if (cosine010_us[i, "osa"] < 10) {
+      ucs_sats[grep(cosine010_us$V2[i], ucs_sats$opown), 1] <- cosine010_us$V1[i]
+      ucs_sats[grep(cosine010_us$V2[i], ucs_sats$contractor), 2] <- cosine010_us$V1[i]
       
-      
+      cosine010_us[grep(cosine010_us$V2[i], cosine_sats$V1)] <- cosine010_us$V1[i] # changing all other instances of V2 in V1 in order to be consistent about changes 
       
     } else {
-      print(paste(cosine010$V1[i], "," , cosine010$V2[i]))
+      print(paste(cosine010_us$V1[i], "," , cosine010_us$V2[i]))
       t <- askYesNo("Swap values?", default = FALSE)
         if (t == TRUE) {
-          ucs_sats[grep(cosine010$V2[i], ucs_sats$opown), 1] <- cosine010$V1[i]
-          ucs_sats[grep(cosine010$V2[i], ucs_sats$contractor), 2] <- cosine010$V1[i]
-        } else {
-          u <- readline("Replace with something else? Write string here:")
-          ucs_sats[grep(cosine010$V2[i], ucs_sats$opown), 1] <- u
-          ucs_sats[grep(cosine010$V2[i], ucs_sats$contractor), 2] <- u
-          ucs_sats[grep(cosine010$V1[i], ucs_sats$opown), 1] <- u
-          ucs_sats[grep(cosine010$V1[i], ucs_sats$contractor), 2] <- u
+          ucs_sats[grep(cosine010_us$V2[i], ucs_sats$opown), 1] <- cosine010_us$V1[i]
+          ucs_sats[grep(cosine010_us$V2[i], ucs_sats$contractor), 2] <- cosine010_us$V1[i]
           
+          cosine010_us[grep(cosine010_us$V2[i], cosine010_us$V1)] <- cosine010_us$V1[i]
+        } else {
+          u <- readline("Replace with something else? Write replacement here or write N:")
+          if (u == "N") {
+            next
+          } else {
+            ucs_sats[grep(cosine010_us$V2[i], ucs_sats$opown), 1] <- u
+            ucs_sats[grep(cosine010_us$V2[i], ucs_sats$contractor), 2] <- u
+            ucs_sats[grep(cosine010_us$V1[i], ucs_sats$opown), 1] <- u
+            ucs_sats[grep(cosine010_us$V1[i], ucs_sats$contractor), 2] <- u
+            
+            cosine010_us[grep(cosine010_us$V1[i], cosine010_us$V1), "V1"] <- u
+            cosine010_us[grep(cosine010_us$V2[i], cosine010_us$V1), "V1"] <- u
+          }
         }
     }
   }
-    cosine010 <- cosine010[!grep(cosine010$V2[i]), ] # removing these rows to stop re-matching later on
-    cosine010 <- cosine010[!grep(cosine010$V1[i]), ]
+  
+    # cosine010_us %<>% filter(!grepl(cosine010_us$V2[i], cosine010_us$V1), 
+    #                          !grepl(cosine010_us$V2[i], cosine010_us$V2),
+    #                          !grepl(cosine010_us$V1[i], cosine010_us$V1),
+    #                          !grepl(cosine010_us$V1[i], cosine010_us$V2))
 }
 
 
 
-# decide on osa threshold (something like 5) and soundex = 0
+# decide on osa threshold (something like 5) and soundex = 0, 
 
 # comb <- tidy_comb_all(unique(c(ucs_sats$opown, ucs_sats$contractor)))
 # dist <- tidy_stringdist(comb) %>%
