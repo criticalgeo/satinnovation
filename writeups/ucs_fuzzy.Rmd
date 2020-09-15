@@ -10,7 +10,6 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r loadlibraries, results="hide"}
 library(tidyverse) # data wrangling & viz
 library(magrittr) # data wrangling
-library(gtools)
 library(tidystringdist) # calculating string distance
 ```
 
@@ -52,7 +51,7 @@ ucs_sats[] <- lapply(ucs_sats, function(x) gsub ("/ ", "/", x))
 numuniq()
 
 # removing all instances of "Inc, Incorporated, Ltd, Limited"
-list <- c(" Inc", " Incorporated", " Ltd", " Limited")
+list <- c(" Inc", " Incorporated", " Ltd", " Limited", " Co", " Corp ")
 for (i in list) {
   ucs_sats[] <- lapply(ucs_sats, function(x) gsub (i, "", x))
 }
@@ -106,8 +105,9 @@ for (i in 1:nrow(cosine010_us)) {
       
       cosine010_us[grep(cosine010_us$V2[i], cosine_sats$V1)] <- cosine010_us$V1[i] # changing all other instances of V2 in V1 in order to be consistent about changes 
       
-    } else {
-      print(paste(cosine010_us$V1[i], "," , cosine010_us$V2[i]))
+    } 
+  } else {
+      print(paste(cosine010_us$V1[i], "," , cosine010_us$V2[i], cosine010_us$V1country[i], cosine010_us$V2country[i]))
       t <- askYesNo("Swap values?", default = FALSE)
         if (t == TRUE) {
           ucs_sats[grep(cosine010_us$V2[i], ucs_sats$opown), 1] <- cosine010_us$V1[i]
@@ -129,7 +129,7 @@ for (i in 1:nrow(cosine010_us)) {
           }
         }
     }
-  }
+
   
     # cosine010_us %<>% filter(!grepl(cosine010_us$V2[i], cosine010_us$V1), 
     #                          !grepl(cosine010_us$V2[i], cosine010_us$V2),
