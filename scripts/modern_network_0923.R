@@ -6,8 +6,8 @@ library(magrittr)
 library(igraph)
 
 ucs_sats <- read.csv("data/processed/modern_ucssats_0923.csv") %>%
-  filter(!grepl("/", opown), !grepl("/", contractor))
-  # filter(grepl("Earth Observation", Purpose))
+  filter(!grepl("/", opown), !grepl("/", contractor)) %>%
+  filter(grepl("Earth Observation", Purpose))
 
 # creating nodes list 
 nodes <- data.frame(name = unique(c(ucs_sats$contractor, ucs_sats$opown))) %>%
@@ -17,13 +17,13 @@ nodes <- data.frame(name = unique(c(ucs_sats$contractor, ucs_sats$opown))) %>%
 # creating data frames of total sats for each contractor and operator to join to nodes df
 cont_sum <- ucs_sats %>% 
   group_by(contractor) %>%
-  summarise(cont_sats = n()) %>%
-  slice(2:nrow(.))
+  summarise(cont_sats = n()) 
+  # slice(2:nrow(.))
 
 op_sum <- ucs_sats %>%
   group_by(opown) %>%
-  summarise(op_sats = n()) %>%
-  slice(2:nrow(.))
+  summarise(op_sats = n()) 
+  # slice(2:nrow(.))
 
 nodes <- nodes %>%
   left_join(cont_sum, by = c("name" = "contractor")) %>%
@@ -59,3 +59,16 @@ names(links)[(ncol(links)-1):ncol(links)] <- c("nodeID_op", "nodeID_cont")
 
 p <- forceNetwork(links, nodes, "nodeID_op", "nodeID_cont", "num_sats", "name", Group = "type", Nodesize = "cont_sats", zoom = TRUE, arrows = TRUE, fontFamily = "Proxima Nova", legend = TRUE)
 p
+
+## IGRAPH NETWORK ANALYSIS ##
+# reordering nodes columns for igraph analysis
+nodes <- nodes[c(2, 1, 3:ncol(nodes))]
+links <- links[c((ncol(links)-1):ncol(links), 1:(ncol(links) - 2))]
+graph <- graph_from_data_frame(d = links, vertices = nodes, directed = T)
+graph <- simplify(graph, remove.multiple = F, remove.loops = T)
+plot(graph, edge.arrow.size = .1, vertex.label = NA, vertex.size = 2)
+deg <- data.frame(in_deg = degree(graph, mode = "in"), out_deg = degree(graph, mode = "out"), total_deg = degree(graph, mode = "all")) 
+nodes <- cbind(nodes, deg)
+rownames(nodes) <- c()
+
+write.csv(nodes, "data/processed/EOnodes_wdegree_0925.csv")
