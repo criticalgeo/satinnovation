@@ -6,8 +6,8 @@ library(magrittr)
 library(igraph)
 
 ucs_sats <- read.csv("data/processed/modern_ucssats_0923.csv") %>%
-  filter(!grepl("/", opown), !grepl("/", contractor)) %>%
-  filter(grepl("Earth Observation", Purpose))
+  filter(!grepl("/", opown), !grepl("/", contractor)) 
+  # filter(grepl("Earth Observation", Purpose))
 
 # creating nodes list 
 nodes <- data.frame(name = unique(c(ucs_sats$contractor, ucs_sats$opown))) %>%
@@ -17,13 +17,13 @@ nodes <- data.frame(name = unique(c(ucs_sats$contractor, ucs_sats$opown))) %>%
 # creating data frames of total sats for each contractor and operator to join to nodes df
 cont_sum <- ucs_sats %>% 
   group_by(contractor) %>%
-  summarise(cont_sats = n()) 
-  # slice(2:nrow(.))
+  summarise(cont_sats = n()) %>%
+  slice(2:nrow(.))
 
 op_sum <- ucs_sats %>%
   group_by(opown) %>%
-  summarise(op_sats = n()) 
-  # slice(2:nrow(.))
+  summarise(op_sats = n()) %>%
+  slice(2:nrow(.))
 
 nodes <- nodes %>%
   left_join(cont_sum, by = c("name" = "contractor")) %>%
@@ -71,4 +71,5 @@ deg <- data.frame(in_deg = degree(graph, mode = "in"), out_deg = degree(graph, m
 nodes <- cbind(nodes, deg)
 rownames(nodes) <- c()
 
-write.csv(nodes, "data/processed/EOnodes_wdegree_0925.csv")
+?write.csv
+write.csv(nodes, "data/processed/nodes_wdegree_0925.csv", fileEncoding = "utf-8")
